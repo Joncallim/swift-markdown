@@ -1,3 +1,4 @@
+// MostlyText downstream: correct a source-position oracle against the authored closing brace.
 /*
  This source file is part of the Swift.org open source project
 
@@ -291,7 +292,7 @@ class BlockDirectiveArgumentParserTests: XCTestCase {
         }
 
         let expectedDump = """
-        Document @1:1-3:4
+        Document @1:1-3:2
         ├─ BlockDirective @1:1-1:13 name: "Outer"
         │  ├─ Argument text segments:
         │  |    @1:8-1:12: "x: 1"
@@ -300,7 +301,7 @@ class BlockDirectiveArgumentParserTests: XCTestCase {
            ├─ InlineCode @2:17-2:24 `Outer`
            ├─ Text @2:24-2:25 "."
            ├─ SoftBreak
-           └─ Text @3:3-3:4 "}"
+           └─ Text @3:1-3:2 "}"
         """
         XCTAssertEqual(expectedDump, document.debugDescription(options: .printSourceLocations))
     }
