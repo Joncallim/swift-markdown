@@ -7,6 +7,8 @@
  See https://swift.org/LICENSE.txt for license information
  See https://swift.org/CONTRIBUTORS.txt for Swift project authors
 */
+// MostlyText downstream: preserve parser-owned reference source metadata.
+
 
 import cmark_gfm
 import cmark_gfm_extensions
@@ -608,6 +610,31 @@ struct MarkupParser {
         return MarkupConversion(state: childConversion.state.next(), result: .inlineAttributes(attributes: attributes, parsedRange: parsedRange, childConversion.result))
      }
 
+    /// Copy borrowed C records and final use coordinates before freeing the tree.
+    private static func referenceDefinitions(
+        in root: UnsafeMutablePointer<cmark_node>?, state: MarkupConverterState
+    ) -> [ParserReferenceDefinition] {
+        let count = cmark_node_reference_definition_count(root)
+        guard count > 0 else { return [] }
+        var uses: [UInt64: [SourceRange]] = [:]
+        let iterator = cmark_iter_new(root)
+        defer { cmark_iter_free(iterator) }
+        while cmark_iter_next(iterator) != CMARK_EVENT_DONE {
+            guard cmark_iter_get_event_type(iterator) == CMARK_EVENT_ENTER else { continue }
+            let node = cmark_iter_get_node(iterator)
+            let identifier = cmark_node_reference_identifier(node)
+            if !state.options.contains(.disableSourcePosOpts), identifier > 0, let range = state.range(node) {
+                uses[identifier, default: []].append(range)
+            }
+        }
+        return (0 ..< count).compactMap { index in
+            let identifier = cmark_node_reference_definition_identifier(root, index)
+            guard identifier > 0, let bytes = cmark_node_reference_definition_source(root, index) else { return nil }
+            return ParserReferenceDefinition(identifier: identifier, source: String(cString: bytes),
+                                             useRanges: uses[identifier] ?? [])
+        }
+    }
+
     static func parseString(_ string: String, source: URL?, options: ParseOptions) -> Document {
         cmark_gfm_core_extensions_ensure_registered()
 
@@ -641,13 +668,17 @@ struct MarkupParser {
 
         precondition(initialState.node != nil)
 
+        let definitions = referenceDefinitions(in: rawDocument, state: initialState)
         cmark_node_free(initialState.node)
         cmark_iter_free(finalState.iterator)
         cmark_parser_free(parser)
 
         let data = _MarkupData(AbsoluteRawMarkup(markup: conversion.result,
                                                 metadata: MarkupMetadata(id: .newRoot(), indexInParent: 0)))
-        return makeMarkup(data) as! Document
+        var result = makeMarkup(data) as! Document
+        result._parserReferenceDefinitions = definitions
+        result._parserReferenceIdentity = result._data.id
+        return result
     }
 }
 

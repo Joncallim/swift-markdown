@@ -7,6 +7,8 @@
  See https://swift.org/LICENSE.txt for license information
  See https://swift.org/CONTRIBUTORS.txt for Swift project authors
 */
+// MostlyText downstream: preserve parser-owned reference source metadata.
+
 
 import Foundation
 
@@ -14,7 +16,18 @@ import Foundation
 ///
 /// - note: Although this could be considered a block element that can contain block elements, a `Document` itself can't be the child of any other markup, so it is not considered a block element.
 public struct Document: Markup, BasicBlockContainer {
-    public var _data: _MarkupData
+    public var _data: _MarkupData {
+        didSet {
+            if _parserReferenceIdentity != _data.id {
+                _parserReferenceDefinitions = nil
+                _parserReferenceIdentity = nil
+            }
+        }
+    }
+
+    // Parser-only source metadata; reconstructed/mutated documents do not inherit it.
+    var _parserReferenceDefinitions: [ParserReferenceDefinition]?
+    var _parserReferenceIdentity: MarkupIdentifier?
 
     init(_ raw: RawMarkup) throws {
         guard case .document = raw.data else {
